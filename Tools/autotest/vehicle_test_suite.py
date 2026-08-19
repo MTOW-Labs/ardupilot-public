@@ -6451,7 +6451,6 @@ class TestSuite(abc.ABC):
         # framework overrides the port per-instance when it starts the
         # peripheral, so listen where this suite's peripheral sends:
         mavproxy = self.start_mavproxy(master=':%u' % self.periph_serial4_udp_port())
-        mavproxy.expect("Detected vehicle")
         self.mavproxy_load_module(mavproxy, 'log')
         mavproxy.send("log list\n")
         mavproxy.expect(r"\bLog (\d+) .* lastLog \1 ")
@@ -11761,6 +11760,21 @@ Also, ignores heartbeats not from our target system'''
 
         self.expect_list_add(mavproxy)
         util.expect_setup_callback(mavproxy, self.expect_callback)
+
+        # MAVProxy downloads the entire parameter set as it connects,
+        # and it is not much use to us until that has finished.  Driving
+        # it in the meantime gets commands which quietly do not happen:
+        # a mission write goes unanswered for long enough that the
+        # vehicle times the upload out and cancels it,
+        #     Changed alt for WPs 1:1 to 37.2
+        #     Received 1272 parameters
+        #     Got MISSION_ACK: TYPE_MISSION: OPERATION_CANCELLED
+        #     AP: Mission upload timeout
+        # leaving the item at its old value.  On an unloaded machine the
+        # download is over before any test notices; on one running the
+        # suite --parallel it is not.
+        mavproxy.expect("Saved [0-9]+ parameters to")
+
         self._mavproxy = mavproxy  # so we can clean up after tests....
         return mavproxy
 
@@ -18855,7 +18869,6 @@ switch value'''
         '''returns the content of the FTP'able file at path'''
         self.progress("Retrieving (%s) using MAVProxy" % path)
         mavproxy = self.start_mavproxy()
-        mavproxy.expect("Saved .* parameters to")
         ex = None
         tmpfile = tempfile.NamedTemporaryFile(mode='r', delete=False)
         try:
@@ -18896,9 +18909,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp list\n")
@@ -19242,9 +19252,6 @@ switch value'''
 
         mavproxy = self.start_mavproxy()
         try:
-            # the parameter download ends by terminating the FTP session, so
-            # let it finish before using the module
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp set list_time\n")
@@ -19835,9 +19842,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -19895,9 +19899,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp list %s\n" % dirname)
@@ -19934,9 +19935,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -19981,7 +19979,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp list %s\n" % dirname)
@@ -20012,7 +20009,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -20276,7 +20272,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp set debug 1\n")
@@ -20340,7 +20335,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -20378,7 +20372,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             mavproxy.send("ftp set debug 1\n")
@@ -20444,9 +20437,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -20498,9 +20488,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            # let the parameter download finish first; it ends by terminating
-            # the FTP session, which would take any listing with it
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
 
@@ -20602,7 +20589,6 @@ switch value'''
         mavproxy = self.start_mavproxy()
         ex = None
         try:
-            mavproxy.expect("Saved .* parameters to")
             mavproxy.send("module load ftp\n")
             mavproxy.expect(["Loaded module ftp", "module ftp already loaded"])
             # this checks the plain listing format, so ask for it: a
