@@ -1,0 +1,221 @@
+# hwdef for the MTOW Axon-C flight controller
+# STM32H743VIT6 (LQFP100).  No PX4IO — RC is direct on USART6.
+# Pin map is authoritative from mtow_axon/pin_mapping_100pin.md (fmu-v6c-class).
+
+# MCU class and specific type
+MCU STM32H7xx STM32H743xx
+
+# external 24 MHz oscillator in HSE *bypass* mode (single-ended clock into OSC_IN)
+OSCILLATOR_HZ 24000000
+define STM32_HSE_BYPASS
+
+# ChibiOS system timer
+STM32_ST_USE_TIMER 2
+
+# board ID — PLACEHOLDER. Reserve a unique ID in Tools/AP_Bootloader/board_types.txt before release.
+APJ_BOARD_ID 5260
+
+# flash: 2 MB, reserve bootloader region
+FLASH_SIZE_KB 2048
+FLASH_RESERVE_START_KB 128
+
+# USB identity (placeholder vendor/product — assign real IDs before release)
+USB_VENDOR 0x1209
+USB_PRODUCT 0x5740
+USB_STRING_MANUFACTURER "MTOW"
+USB_STRING_PRODUCT "Axon-C"
+
+# ----------------------------------------------------------------------------
+# Serial ports
+#   SERIAL0 USB, 1 TELEM1(UART7), 2 TELEM2(USART3), 3 GPS1(USART1),
+#   4 GPS2(UART8), 5 TELEM3(USART2), 6 RC(USART6)
+# ----------------------------------------------------------------------------
+SERIAL_ORDER OTG1 UART7 USART3 USART1 UART8 USART2 USART6 OTG2
+
+# USB
+PA11 OTG_FS_DM OTG1
+PA12 OTG_FS_DP OTG1
+PA9  VBUS INPUT OPENDRAIN
+
+# SWD debug
+PA13 JTMS-SWDIO SWD
+PA14 JTCK-SWCLK SWD
+
+# TELEM1 (UART7, with flow control)
+PE8  UART7_TX UART7
+PE7  UART7_RX UART7
+PE9  UART7_RTS UART7 LOW PULLDOWN
+PE10 UART7_CTS UART7
+
+# TELEM2 (USART3)
+PD8 USART3_TX USART3
+PD9 USART3_RX USART3
+
+# GPS1 (USART1)
+PB6  USART1_TX USART1
+PA10 USART1_RX USART1
+
+# GPS2 (UART8)
+PE1 UART8_TX UART8
+PE0 UART8_RX UART8
+
+# TELEM3 (USART2)
+PD5 USART2_TX USART2
+PA3 USART2_RX USART2
+
+# RC input (USART6) — no PX4IO; SBUS/CRSF/DSM etc. USART6 supports HW RX inversion for SBUS.
+PC6 USART6_TX USART6
+PC7 USART6_RX USART6
+
+# ----------------------------------------------------------------------------
+# ADC
+# ----------------------------------------------------------------------------
+PC5 BATT_VOLTAGE_SENS ADC1 SCALE(1)   # ADC1_INP8
+PC4 BATT_CURRENT_SENS ADC1 SCALE(1)   # ADC1_INP4
+PA4 VDD_5V_SENS       ADC1 SCALE(2)   # ADC1_INP18
+PC0 RSSI_ADC          ADC1 SCALE(1)   # ADC1_INP10 (analog RSSI / spare)
+
+define HAL_BATT_VOLT_PIN 8
+define HAL_BATT_CURR_PIN 4
+# NOTE: scales below are placeholders — set to the actual divider / shunt values.
+define HAL_BATT_VOLT_SCALE 18.18
+define HAL_BATT_CURR_SCALE 36.36
+
+# ----------------------------------------------------------------------------
+# SPI1 — 3 IMUs (shared SCK/MISO/MOSI, per-device CS + DRDY)
+# ----------------------------------------------------------------------------
+PA5 SPI1_SCK  SPI1
+PA6 SPI1_MISO SPI1
+PA7 SPI1_MOSI SPI1
+PC15 IMU1_CS CS            # ICM-40609-D
+PC14 IMU2_CS CS            # ISM330IS
+PC13 IMU3_CS CS            # LSM6DSO
+PE4 IMU1_DRDY INPUT
+PE5 IMU2_DRDY INPUT
+PE6 IMU3_DRDY INPUT
+
+# SPI2 — external SPI (off-board)
+PD3 SPI2_SCK  SPI2
+PC2 SPI2_MISO SPI2
+PC3 SPI2_MOSI SPI2
+PD4 EXT_CS CS
+
+# SPI3 — two spare IMU slots (future next-gen InvenSense); SYNCX on PA2/TIM15 (GPIO for now)
+PC10 SPI3_SCK  SPI3
+PC11 SPI3_MISO SPI3
+PC12 SPI3_MOSI SPI3
+PD2  SLOT1_CS CS
+PE15 SLOT2_CS CS
+PC8  SLOT1_DRDY INPUT
+PB1  SLOT2_DRDY INPUT
+PA2  IMU_SYNC OUTPUT LOW GPIO(66)   # IMU sample-sync clock (TIM15_CH1); driven as GPIO until used
+
+# SPI device table
+SPIDEV icm40609 SPI1 DEVID1 IMU1_CS MODE3 2*MHZ 8*MHZ
+# IMU2 (ISM330IS) and IMU3 (LSM6DSO) have NO ArduPilot driver yet (as with PX4).
+# CS/DRDY are wired; populate a supported alternate (e.g. ICM42688 / LSM6DSV) or add a driver.
+SPIDEV imu2 SPI1 DEVID2 IMU2_CS MODE3 2*MHZ 8*MHZ
+SPIDEV imu3 SPI1 DEVID3 IMU3_CS MODE3 2*MHZ 8*MHZ
+
+# Only IMU1 has a working driver today — board boots with a single IMU.
+IMU Invensensev3 SPI:icm40609 ROTATION_NONE
+# TODO: add IMU lines for IMU2/IMU3 once ArduPilot drivers (or supported parts) are available.
+
+define HAL_DEFAULT_INS_FAST_SAMPLE 1
+
+# ----------------------------------------------------------------------------
+# PWM outputs (8): TIM1 x4, TIM4 x2, TIM5 x2
+# ----------------------------------------------------------------------------
+PA8  TIM1_CH1 TIM1 PWM(1) GPIO(50)
+PE11 TIM1_CH2 TIM1 PWM(2) GPIO(51)
+PE13 TIM1_CH3 TIM1 PWM(3) GPIO(52)
+PE14 TIM1_CH4 TIM1 PWM(4) GPIO(53)
+PD14 TIM4_CH3 TIM4 PWM(5) GPIO(54)
+PD15 TIM4_CH4 TIM4 PWM(6) GPIO(55)
+PA0  TIM5_CH1 TIM5 PWM(7) GPIO(56)
+PA1  TIM5_CH2 TIM5 PWM(8) GPIO(57)
+
+# ----------------------------------------------------------------------------
+# CAN
+# ----------------------------------------------------------------------------
+PD0 CAN1_RX CAN1
+PD1 CAN1_TX CAN1
+PB5  CAN2_RX CAN2
+PB13 CAN2_TX CAN2
+# 120R termination enables (ext. pull -> term-on; drive low to disable)
+PC1  TERM_CAN1 OUTPUT HIGH GPIO(64)
+PE12 TERM_CAN2 OUTPUT HIGH GPIO(65)
+
+# ----------------------------------------------------------------------------
+# I2C — I2C1 internal sensors (+ external breakout), I2C4 internal EEPROM/secure, I2C2 external
+# ----------------------------------------------------------------------------
+PB8 I2C1_SCL I2C1
+PB7 I2C1_SDA I2C1
+PB10 I2C2_SCL I2C2
+PB11 I2C2_SDA I2C2
+PD12 I2C4_SCL I2C4
+PD13 I2C4_SDA I2C4
+
+I2C_ORDER I2C1 I2C4 I2C2
+define HAL_I2C_INTERNAL_MASK 3
+
+# barometer: LPS25HBTR on I2C1 @ 0x5D
+BARO LPS2XH I2C:0:0x5D
+
+# compass: BMM350 on I2C1 @ 0x14
+define AP_COMPASS_PROBING_ENABLED 1
+COMPASS BMM350 I2C:0:0x14 false ROTATION_NONE
+
+# prototypes may boot without a baro
+define HAL_BARO_ALLOW_INIT_NO_BARO 1
+
+# ----------------------------------------------------------------------------
+# Sensor-domain power enables (active high) — power on at boot
+# ----------------------------------------------------------------------------
+PB2  SENSOR1_EN OUTPUT HIGH GPIO(70)   # IMU1 domain
+PB0  SENSOR2_EN OUTPUT HIGH GPIO(71)   # IMU2 domain
+PH1  SENSOR3_EN OUTPUT HIGH GPIO(72)   # IMU3 domain (freed OSC_OUT)
+PD11 SENSOR4_EN OUTPUT HIGH GPIO(73)   # 4th (non-IMU) domain
+
+# ----------------------------------------------------------------------------
+# 5V peripheral power control / sensing
+# ----------------------------------------------------------------------------
+PE2 nVDD_5V_PERIPH_EN   OUTPUT LOW
+PE3 VDD_5V_PERIPH_nOC   INPUT PULLUP
+
+# ----------------------------------------------------------------------------
+# Heater (PB9 / TIM17_CH1) driven as GPIO
+# ----------------------------------------------------------------------------
+PB9 HEATER_EN OUTPUT LOW GPIO(80)
+define HAL_HEATER_GPIO_PIN 80
+define HAL_HAVE_IMU_HEATER 1
+define HAL_IMU_TEMP_DEFAULT 45
+
+# GPS PPS input (PA15 / TIM2_CH1)
+PA15 EXTERN_GPIO1 INPUT GPIO(1)
+
+# ----------------------------------------------------------------------------
+# microSD (SDMMC2, 4-bit)
+# ----------------------------------------------------------------------------
+PD6  SDMMC2_CK  SDMMC2
+PD7  SDMMC2_CMD SDMMC2
+PB14 SDMMC2_D0  SDMMC2
+PB15 SDMMC2_D1  SDMMC2
+PB3  SDMMC2_D2  SDMMC2
+PB4  SDMMC2_D3  SDMMC2
+define FATFS_HAL_DEVICE SDCD2
+define HAL_OS_FATFS_IO 1
+
+# ----------------------------------------------------------------------------
+# Storage: no FRAM. ArduPilot has no I2C-EEPROM backend, so params use MCU flash.
+# (The on-board AT24C512C @ I2C4 0x50 + SE051C2 @ 0x48 are not used by ArduPilot.)
+# ----------------------------------------------------------------------------
+define HAL_STORAGE_SIZE 32768
+
+# no physical safety switch (no PX4IO) — arm via params
+define HAL_HAVE_SAFETY_SWITCH 0
+
+DMA_PRIORITY SDMMC* USART6* ADC* UART* USART* SPI* TIM*
+
+# build ABIN for flash-from-bootloader support
+env BUILD_ABIN True
