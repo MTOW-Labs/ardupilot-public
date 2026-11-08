@@ -155,6 +155,13 @@ void AP_Mission::resume()
         return;
     }
 
+    // a return path rejoin point is part way along a leg so it is not in storage
+    if (_flags.rejoining_return_path && _nav_cmd.index == _rejoin_cmd.index && start_command(_rejoin_cmd)) {
+        _nav_cmd = _rejoin_cmd;
+        _flags.nav_cmd_loaded = true;
+        return;
+    }
+
     // rewind the mission wp if the repeat distance has been set via MAV_CMD_DO_SET_RESUME_REPEAT_DIST
     if (_repeat_dist > 0 && _wp_index_history[LAST_WP_PASSED] != AP_MISSION_CMD_INDEX_NONE) {
         // if not already in a resume state calculate the position to rewind to
@@ -264,6 +271,7 @@ void AP_Mission::reset()
     _flags.do_cmd_all_done = false;
     _flags.in_landing_sequence = false;
     _flags.in_return_path = false;
+    _flags.rejoining_return_path = false;
     _nav_cmd.index         = AP_MISSION_CMD_INDEX_NONE;
     _do_cmd.index          = AP_MISSION_CMD_INDEX_NONE;
     _prev_nav_cmd_index    = AP_MISSION_CMD_INDEX_NONE;
@@ -610,6 +618,7 @@ bool AP_Mission::set_current_cmd(uint16_t index)
     // Clear flags
     _flags.in_landing_sequence = false;
     _flags.in_return_path = false;
+    _flags.rejoining_return_path = false;
 
     // read command to check for DO_LAND_START and DO_RETURN_PATH_START
     Mission_Command cmd;
@@ -2203,6 +2212,7 @@ bool AP_Mission::advance_current_nav_cmd(uint16_t starting_index)
             }
             // set current navigation command and start it
             _nav_cmd = cmd;
+            _flags.rejoining_return_path = false;
             if (start_command(_nav_cmd)) {
                 _flags.nav_cmd_loaded = true;
                 if (_jump_tag.age > 0 && _jump_tag.age < UINT16_MAX) {
@@ -2589,7 +2599,8 @@ bool AP_Mission::jump_to_landing_sequence(const Location &current_loc)
 }
 
 /*
-   find the closest point on the mission after a DO_RETURN_PATH_START and before DO_LAND_START or landing
+   join the mission at the closest point after a DO_RETURN_PATH_START and before DO_LAND_START or landing
+   if that point is part way along a leg the vehicle flies to it and then follows the leg
  */
 bool AP_Mission::jump_to_closest_mission_leg(const Location &current_loc)
 {
@@ -2606,6 +2617,8 @@ bool AP_Mission::jump_to_closest_mission_leg(const Location &current_loc)
     }
 
     uint16_t landing_start_index = 0;
+    uint16_t rejoin_leg_start_index = AP_MISSION_CMD_INDEX_NONE;
+    Location rejoin_loc;
     float min_distance = -1;
 
     // This defines the maximum number of waypoints that will be searched, this limits the worst case runtime
@@ -2615,10 +2628,14 @@ bool AP_Mission::jump_to_closest_mission_leg(const Location &current_loc)
     for (uint16_t i = 1; i < num_commands(); i++) {
         if (get_command_id(i) == uint16_t(MAV_CMD_DO_RETURN_PATH_START)) {
             uint16_t tmp_index;
+            uint16_t tmp_leg_start_index;
+            Location tmp_rejoin_loc;
             float tmp_distance;
-            if (distance_to_mission_leg(i, search_remaining, tmp_distance, tmp_index, current_loc) && (min_distance < 0 || tmp_distance <= min_distance)){
+            if (distance_to_mission_leg(i, search_remaining, tmp_distance, tmp_index, tmp_leg_start_index, tmp_rejoin_loc, current_loc) && (min_distance < 0 || tmp_distance <= min_distance)){
                 min_distance = tmp_distance;
                 landing_start_index = tmp_index;
+                rejoin_leg_start_index = tmp_leg_start_index;
+                rejoin_loc = tmp_rejoin_loc;
             }
             if (search_remaining == 0) {
                 // Run out of time to search, stop and return the best so far
@@ -2627,20 +2644,55 @@ bool AP_Mission::jump_to_closest_mission_leg(const Location &current_loc)
         }
     }
 
-    if (landing_start_index != 0 && set_current_cmd(landing_start_index)) {
+    if (landing_start_index == 0) {
+        // Failed to find do land start
+        return false;
+    }
 
+    if (rejoin_leg_start_index != AP_MISSION_CMD_INDEX_NONE) {
+        // the closest point is part way along a leg
+        if (!start_return_path_rejoin(rejoin_leg_start_index, rejoin_loc)) {
+            return false;
+        }
+
+    } else if (set_current_cmd(landing_start_index)) {
         // if the mission has ended it has to be restarted
         if (state() == AP_Mission::MISSION_STOPPED) {
             resume();
         }
 
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Return path started");
-        _flags.in_return_path = true;
-        return true;
+    } else {
+        return false;
     }
 
-    // Failed to find do land start
-    return false;
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Return path started");
+    _flags.in_return_path = true;
+    return true;
+}
+
+// start the mission from a virtual wp at rejoin_loc on the leg that starts at leg_start_index
+// the leg's own wps and do commands then follow as normal
+bool AP_Mission::start_return_path_rejoin(uint16_t leg_start_index, const Location &rejoin_loc)
+{
+    // a stopped mission only loads the leg start in set_current_cmd, it does not start it
+    if (_flags.state == MISSION_RUNNING) {
+        stop();
+    }
+    if (!set_current_cmd(leg_start_index)) {
+        return false;
+    }
+
+    // replace the leg start with a plain wp at the rejoin point, the
+    // index is kept so the mission continues with the rest of the leg
+    _rejoin_cmd = {};
+    _rejoin_cmd.index = leg_start_index;
+    _rejoin_cmd.id = MAV_CMD_NAV_WAYPOINT;
+    _rejoin_cmd.content.location = rejoin_loc;
+    _nav_cmd = _rejoin_cmd;
+    _flags.rejoining_return_path = true;
+
+    resume();
+    return true;
 }
 
 // jumps the mission to the closest landing abort that is planned, returns false if unable to find a valid abort
@@ -2794,12 +2846,15 @@ reset_do_jump_tracking:
 
 // Approximate the distance travelled to return to the mission path. DO_JUMP commands are observed in look forward.
 // Stop searching once reaching a landing or do-land-start
-bool AP_Mission::distance_to_mission_leg(uint16_t start_index, uint16_t &search_remaining, float &rejoin_distance, uint16_t &rejoin_index, const Location& current_loc)
+bool AP_Mission::distance_to_mission_leg(uint16_t start_index, uint16_t &search_remaining, float &rejoin_distance, uint16_t &rejoin_index, uint16_t &rejoin_leg_start_index, Location &rejoin_loc, const Location& current_loc)
 {
     Location prev_loc;
+    uint16_t prev_index = AP_MISSION_CMD_INDEX_NONE;
+    bool jumped_since_prev = false;
     Mission_Command temp_cmd;
     rejoin_distance = -1;
     rejoin_index = -1;
+    rejoin_leg_start_index = AP_MISSION_CMD_INDEX_NONE;
     bool ret = false;
 
     // back up jump tracking to reset after distance calculation
@@ -2820,12 +2875,18 @@ bool AP_Mission::distance_to_mission_leg(uint16_t start_index, uint16_t &search_
                 goto reset_do_jump_tracking;
             }
         }
+        // get_next_cmd returns the target of a DO_JUMP rather than the command at index
+        if (temp_cmd.index != index) {
+            jumped_since_prev = true;
+        }
         index = temp_cmd.index + 1;
 
         if (stored_in_location(temp_cmd.id) && temp_cmd.content.location.initialised()) {
             if (prev_loc.lat == 0 && prev_loc.lng == 0) {
                 // Need a valid previous location to do distance to leg calculation
                 prev_loc = temp_cmd.content.location;
+                prev_index = temp_cmd.index;
+                jumped_since_prev = false;
 
                 // single point dist calc
                 rejoin_distance = prev_loc.get_distance_NED_alt_frame(current_loc).length();
@@ -2838,23 +2899,38 @@ bool AP_Mission::distance_to_mission_leg(uint16_t start_index, uint16_t &search_
                 if (!mission_vector.is_zero()) {
                     Vector3f pos = prev_loc.get_distance_NED_alt_frame(current_loc);
 
-                    // project pos vector on to mission vector
-                    Vector3f p = pos.projected(mission_vector);
-
-                    // constrain to mission line
-                    p.x = constrain_float(p.x, MIN(0,mission_vector.x), MAX(0,mission_vector.x));
-                    p.y = constrain_float(p.y, MIN(0,mission_vector.y), MAX(0,mission_vector.y));
-                    p.z = constrain_float(p.z, MIN(0,mission_vector.z), MAX(0,mission_vector.z));
+                    // proportion along the mission line of the closest point to pos
+                    const float leg_proportion = constrain_float((pos * mission_vector) / mission_vector.length_squared(), 0, 1);
+                    const Vector3f p = mission_vector * leg_proportion;
 
                     const float disttemp = (p - pos).length();
-
-                    // store wp location as previous
-                    prev_loc = temp_cmd.content.location;
 
                     if (disttemp < rejoin_distance || is_negative(rejoin_distance)) {
                         rejoin_distance = disttemp;
                         rejoin_index = temp_cmd.index;
+                        rejoin_leg_start_index = AP_MISSION_CMD_INDEX_NONE;
+
+                        // a point part way along a straight leg can be flown to directly,
+                        // otherwise rejoin at the wp at the end of the leg
+                        const bool straight_leg = (temp_cmd.id != MAV_CMD_NAV_SPLINE_WAYPOINT) && (temp_cmd.id != MAV_CMD_NAV_ARC_WAYPOINT);
+                        const Location::AltFrame frame = prev_loc.get_alt_frame();
+                        int32_t start_alt_cm, end_alt_cm;
+                        if (leg_proportion < 1 && straight_leg && !jumped_since_prev &&
+                            (temp_cmd.content.location.get_alt_frame() == frame) &&
+                            prev_loc.get_alt_cm(frame, start_alt_cm) &&
+                            temp_cmd.content.location.get_alt_cm(frame, end_alt_cm)) {
+                            rejoin_loc = prev_loc;
+                            rejoin_loc.offset(mission_vector.x * leg_proportion, mission_vector.y * leg_proportion);
+                            rejoin_loc.set_alt_cm(start_alt_cm + (end_alt_cm - start_alt_cm) * leg_proportion, frame);
+                            rejoin_leg_start_index = prev_index;
+                        }
                     }
+
+                    // store wp location as previous
+                    prev_loc = temp_cmd.content.location;
+                    prev_index = temp_cmd.index;
+                    jumped_since_prev = false;
+
                     ret = true;
                 }
             }
