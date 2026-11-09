@@ -73,7 +73,10 @@ public:
 
     /// enable_configured - allows configured fences to be enabled/disabled.
     /// returns a bitmask of fences that were changed
-    uint8_t enable_configured(bool value) { return enable(value, _configured_fences, true); }
+    /// ALL_FENCES rather than the configured set: enable() applies the
+    /// configuration itself, and this way the request says "whatever is
+    /// configured", which is what a switch or a GCS enable means
+    uint8_t enable_configured(bool value) { return enable(value, AC_FENCE_ALL_FENCES, true); }
 
     /// auto_enabled - automaticaly enable/disable fence depending of flight status
     AutoEnable auto_enabled() const { return static_cast<AutoEnable>(_auto_enabled.get()); }
@@ -288,6 +291,14 @@ private:
     AP_Int8         _auto_enabled;      // top level flag for auto enabling fence
     uint8_t         _last_auto_enabled; // value of auto_enabled last time we checked
     AP_UInt8        _configured_fences; // bit mask holding which fences are enabled
+    uint8_t         _last_configured_fences; // value of _configured_fences last time we checked
+    // the fences the vehicle has been asked to enforce, before configuration
+    // is applied.  This is not recoverable from _enabled_fences, which is that
+    // set masked by FENCE_TYPE: de-configuring a type empties the mask without
+    // the fence having been turned off, and disabling one type - the floor on
+    // landing, say - must not stop the rest being enforced when they are
+    // configured again.
+    uint8_t         _requested_fences;
     AP_Enum<Action> _action;            // recovery action specified by user
     AP_Float        _alt_max_m;         // altitude upper limit in meters
     AP_Float        _alt_min_m;         // altitude lower limit in meters
