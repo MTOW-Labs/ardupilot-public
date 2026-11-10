@@ -242,7 +242,7 @@ uint64_t JSON::parse_sensors(const char *json)
 
             case DATA_VECTOR3F: {
                 Vector3<float> v;
-                if (!parse_array(p, v, ARRAY_SIZE(v))) {
+                if (!parse_array(p, v, 3)) {
                     printf("Failed to parse Vector3f for %s/%s\n", key.section, key.key);
                     return received_bitmask;
                 }
@@ -254,7 +254,7 @@ uint64_t JSON::parse_sensors(const char *json)
 
             case DATA_VECTOR3D: {
                 Vector3<double> v;
-                if (!parse_array(p, v, ARRAY_SIZE(v))) {
+                if (!parse_array(p, v, 3)) {
                     printf("Failed to parse Vector3d for %s/%s\n", key.section, key.key);
                     return received_bitmask;
                 }
@@ -266,7 +266,7 @@ uint64_t JSON::parse_sensors(const char *json)
 
             case QUATERNION: {
                 VectorN<float, 4> v;
-                if (!parse_array(p, v, ARRAY_SIZE(v))) {
+                if (!parse_array(p, v, 4)) {
                     printf("Failed to parse Vector4f for %s/%s\n", key.section, key.key);
                     return received_bitmask;
                 }
