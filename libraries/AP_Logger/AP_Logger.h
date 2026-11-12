@@ -450,6 +450,11 @@ private:
     AP_Logger_Backend *backends[LOGGER_MAX_BACKENDS];
     const AP_UInt32 *_log_bitmask;
 
+    // true once any of servo outputs 15-18 (RCO2) or 19-32 (RCO3)
+    // has been non-zero; until then those messages aren't written
+    bool rcout2_seen;
+    bool rcout3_seen;
+
     enum class Backend_Type : uint8_t {
         NONE       = 0,
         FILESYSTEM = (1<<0),

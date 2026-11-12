@@ -217,6 +217,11 @@ void AP_Logger::Write_RCOUT(void)
         WriteBlock(&pkt, sizeof(pkt));
     }
 
+    // Channels 15 and up are only logged once something has been
+    // output on one of them: they count as enabled on every board,
+    // including those with fewer outputs, which would otherwise log
+    // zeroes for them forever.  Their function can't be relied on,
+    // as DO_SET_SERVO and scripting drive channels with none.
 #if NUM_SERVO_CHANNELS >= 15
     if ((enabled_mask & 0x3C000) != 0) {
         const struct log_RCOUT2 pkt2{
@@ -227,31 +232,45 @@ void AP_Logger::Write_RCOUT(void)
             chan17         : hal.rcout->read(16),
             chan18         : hal.rcout->read(17),
         };
-        WriteBlock(&pkt2, sizeof(pkt2));
+        if (pkt2.chan15 != 0 || pkt2.chan16 != 0 || pkt2.chan17 != 0 || pkt2.chan18 != 0) {
+            rcout2_seen = true;
+        }
+        if (rcout2_seen) {
+            WriteBlock(&pkt2, sizeof(pkt2));
+        }
     }
 #endif
 
 #if NUM_SERVO_CHANNELS >= 19
     if ((enabled_mask & 0xFFFC0000) != 0) {
-        const struct log_RCOUT pkt3{
-            LOG_PACKET_HEADER_INIT(LOG_RCOUT3_MSG),
-            time_us       : AP_HAL::micros64(),
-            chan1         : hal.rcout->read(18),
-            chan2         : hal.rcout->read(19),
-            chan3         : hal.rcout->read(20),
-            chan4         : hal.rcout->read(21),
-            chan5         : hal.rcout->read(22),
-            chan6         : hal.rcout->read(23),
-            chan7         : hal.rcout->read(24),
-            chan8         : hal.rcout->read(25),
-            chan9         : hal.rcout->read(26),
-            chan10        : hal.rcout->read(27),
-            chan11        : hal.rcout->read(28),
-            chan12        : hal.rcout->read(29),
-            chan13        : hal.rcout->read(30),
-            chan14        : hal.rcout->read(31)
-        };
-        WriteBlock(&pkt3, sizeof(pkt3));
+        uint16_t channels[14];
+        for (uint8_t i = 0; i < ARRAY_SIZE(channels); i++) {
+            channels[i] = hal.rcout->read(18 + i);
+            if (channels[i] != 0) {
+                rcout3_seen = true;
+            }
+        }
+        if (rcout3_seen) {
+            const struct log_RCOUT pkt3{
+                LOG_PACKET_HEADER_INIT(LOG_RCOUT3_MSG),
+                time_us       : AP_HAL::micros64(),
+                chan1         : channels[0],
+                chan2         : channels[1],
+                chan3         : channels[2],
+                chan4         : channels[3],
+                chan5         : channels[4],
+                chan6         : channels[5],
+                chan7         : channels[6],
+                chan8         : channels[7],
+                chan9         : channels[8],
+                chan10        : channels[9],
+                chan11        : channels[10],
+                chan12        : channels[11],
+                chan13        : channels[12],
+                chan14        : channels[13]
+            };
+            WriteBlock(&pkt3, sizeof(pkt3));
+        }
     }
 #endif
 
