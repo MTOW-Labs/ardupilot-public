@@ -377,8 +377,15 @@ void Plane::one_second_loop()
 #endif
 
     if (flight_option_enabled(FlightOptions::ENABLE_DEFAULT_AIRSPEED)) {
-        // use average of min and max airspeed as default airspeed fusion with high variance
-        ahrs.writeDefaultAirSpeed((float)((aparm.airspeed_min + aparm.airspeed_max)/2),
+        // assume the speed being flown, with the envelope's half-width as the
+        // uncertainty: cruise, raised towards AIRSPEED_MAX by a nudged throttle
+        // as the airspeed target is when a sensor is fitted
+        float assumed_airspeed = aparm.airspeed_cruise;
+        if (g.throttle_nudge && channel_throttle->get_control_in() > 50) {
+            const float nudge = (channel_throttle->get_control_in() - 50) * 0.02f;
+            assumed_airspeed += (aparm.airspeed_max - aparm.airspeed_cruise) * nudge;
+        }
+        ahrs.writeDefaultAirSpeed(assumed_airspeed,
                                   (float)((aparm.airspeed_max - aparm.airspeed_min)/2));
     }
 
