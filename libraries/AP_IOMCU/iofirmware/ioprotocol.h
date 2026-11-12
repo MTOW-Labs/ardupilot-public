@@ -156,8 +156,19 @@ struct page_reg_status {
     uint8_t err_write;
     uint8_t err_uart;
     uint8_t err_lock;
-    uint8_t spare;
+    uint8_t reset_cause; // P_STATUS_RESET_CAUSE_* flags; 0 from firmware that predates them
 };
+
+// page_reg_status.reset_cause flags. The low bits are the
+// STM32_RESET_CAUSE_* values from the IOMCU's last reset
+#define P_STATUS_RESET_CAUSE_POWER_ON  (1U<<0)
+#define P_STATUS_RESET_CAUSE_PIN       (1U<<1)
+#define P_STATUS_RESET_CAUSE_SOFTWARE  (1U<<2)
+#define P_STATUS_RESET_CAUSE_IWDG      (1U<<3)
+#define P_STATUS_RESET_CAUSE_WWDG      (1U<<4)
+#define P_STATUS_RESET_CAUSE_LOW_POWER (1U<<5)
+#define P_STATUS_RESET_CAUSE_BROWNOUT  (1U<<6)
+#define P_STATUS_RESET_CAUSE_VALID     (1U<<7)
 
 struct page_rc_input {
     uint8_t count;
