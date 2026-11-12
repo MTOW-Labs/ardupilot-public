@@ -223,10 +223,12 @@ AOPT =
 TOPT = -mthumb -DTHUMB
 
 # Define C warning options here
-CWARN = -Wall -Wextra -Wundef -Wstrict-prototypes -Werror
+# NOTE: trailing -Wno-error neutralises -Werror so the bundled ChibiOS builds
+# with newer GCC (13.x) which flags warnings (e.g. -Waddress) the code predates.
+CWARN = -Wall -Wextra -Wundef -Wstrict-prototypes -Werror -Wno-error
 
 # Define C++ warning options here
-CPPWARN = -Wall -Wextra -Wundef -Werror
+CPPWARN = -Wall -Wextra -Wundef -Werror -Wno-error
 
 #
 # Compiler settings
