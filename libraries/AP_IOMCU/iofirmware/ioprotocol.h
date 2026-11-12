@@ -156,8 +156,27 @@ struct page_reg_status {
     uint8_t err_write;
     uint8_t err_uart;
     uint8_t err_lock;
-    uint8_t spare;
+    uint8_t reset_cause; // P_STATUS_RESET_CAUSE_* flags; 0 from firmware that predates them
+    // supply dips since boot in the low 15 bits, saturating, plus
+    // P_STATUS_SUPPLY_DIPS_DETECTED when the IOMCU detects them. This
+    // sits in what was tail padding, so older firmware sends 0
+    uint16_t supply_dips;
 };
+static_assert(sizeof(struct page_reg_status) == 44, "status page size must not change");
+
+#define P_STATUS_SUPPLY_DIPS_DETECTED (1U<<15)
+#define P_STATUS_SUPPLY_DIPS_MASK     0x7FFFU
+
+// page_reg_status.reset_cause flags. The low bits are the
+// STM32_RESET_CAUSE_* values from the IOMCU's last reset
+#define P_STATUS_RESET_CAUSE_POWER_ON  (1U<<0)
+#define P_STATUS_RESET_CAUSE_PIN       (1U<<1)
+#define P_STATUS_RESET_CAUSE_SOFTWARE  (1U<<2)
+#define P_STATUS_RESET_CAUSE_IWDG      (1U<<3)
+#define P_STATUS_RESET_CAUSE_WWDG      (1U<<4)
+#define P_STATUS_RESET_CAUSE_LOW_POWER (1U<<5)
+#define P_STATUS_RESET_CAUSE_BROWNOUT  (1U<<6)
+#define P_STATUS_RESET_CAUSE_VALID     (1U<<7)
 
 struct page_rc_input {
     uint8_t count;
